@@ -1,0 +1,75 @@
+{$VERSION 3.1.0027}
+{$CLEO .cs}
+
+//-------------MAIN---------------
+03A4: name_thread 'IMPEXP'
+
+:IMPEXP
+wait 0
+if
+80DB:   not actor $PLAYER_ACTOR in_car 0@
+else_jump @IMPEXP_STARTMISSION
+if and
+00EC:   actor $PLAYER_ACTOR 0 near_point 2775.8577 -2471.6956 radius 150.0 150.0
+856E:   not car 0@ defined
+else_jump @IMPEXP_REMOVEVAN1
+if and
+80EC:   not actor $PLAYER_ACTOR 0 near_point 2775.8577 -2471.6956 radius 150.0 150.0
+056E:   car 0@ defined
+else_jump @IMPEXP_CREATEVANASK1
+jump @IMPEXP
+
+:IMPEXP_CREATEVANASK1
+wait 0
+if
+056E:   car 0@ defined
+else_jump @IMPEXP_CREATEVAN1
+jump @IMPEXP
+
+:IMPEXP_CREATEVAN1
+wait 0
+if
+0248:   model #MULE available
+else_jump @IMPEXP_LOAD
+0506: set_car_model #MULE next_variation -1 -1
+00A5: 0@ = create_car #MULE at 2775.9 -2471.7 14.0
+0732: random_car_generator_disable_model #MULE
+0175: set_car 0@ Z_angle_to 90.0
+jump @IMPEXP
+
+:IMPEXP_LOAD
+wait 0
+if
+856E:   not car 0@ defined
+else_jump @IMPEXP
+0247: load_model #MULE
+jump @IMPEXP_CREATEVAN1
+
+:IMPEXP_REMOVEVANASK1
+wait 0
+if
+00EC:   actor $PLAYER_ACTOR 0 near_point 2775.8577 -2471.6956 radius 150.0 150.0
+else_jump @IMPEXP_REMOVEVAN1
+jump @IMPEXP
+
+
+:IMPEXP_REMOVEVAN1
+wait 0
+if and
+80EC:   not actor $PLAYER_ACTOR 0 near_point 2775.8577 -2471.6956 radius 150.0 150.0
+056E:   car 0@ defined
+00DB:   actor $PLAYER_ACTOR in_car 0@
+else_jump @IMPEXP
+00A6: destroy_car 0@
+jump @IMPEXP
+
+:IMPEXP_STARTMISSION
+wait 0
+01B4: set_player $PLAYER_CHAR can_move 0
+0109: player $PLAYER_CHAR money += -1000
+fade 0 500
+while 016B:   fading
+wait 0
+end
+0A92: create_custom_thread "BlackMarket\impexpm.cs" 0@
+0A93: end_custom_thread

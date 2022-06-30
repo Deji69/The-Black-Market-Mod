@@ -1,0 +1,254 @@
+{$VERSION 3.1.0027}
+{$CLEO .cs}
+
+//-------------MAIN---------------
+03A4: name_thread 'IMPEXPM'
+0A95: enable_thread_saving
+
+0006: 9@ = 20
+0006: 10@ = 0
+0006: 16@ = 0
+0006: 17@ = 0
+0006: 18@ = 0
+0006: 19@ = 0
+
+:IMPEXPM
+wait 0
+04CE: 1@ = create_icon_marker_without_sphere 51 at 2802.7 -2356.7 13.5
+04CE: 21@ = create_icon_marker_without_sphere 56 at 2445.2 -1761.2 13.9
+00BC: show_text_highpriority GXT 'BMMT01' time 5000 flag 1
+wait 200
+fade 1 500
+01B4: set_player $PLAYER_CHAR can_move 1
+jump @IMPEXPM_LOOP
+
+:IMPEXPM_LOOP
+wait 0
+if
+00DB:   actor $PLAYER_ACTOR in_car 0@
+else_jump @IMPEXPM_END
+if
+80FE:   not actor $PLAYER_ACTOR sphere 1 in_sphere 2802.7 -2356.7 13.5 radius 2.0 2.0 2.0
+else_jump @IMPEXPM_LSDOCKS
+if
+80FE:   not actor $PLAYER_ACTOR sphere 1 in_sphere 2445.2 -1761.2 13.9 radius 2.0 2.0 2.0
+else_jump @IMPEXPM_UNLOAD
+jump @IMPEXPM_LOOP
+
+:IMPEXPM_LOOPALT
+wait 0
+if
+00DB:   actor $PLAYER_ACTOR in_car 0@
+else_jump @IMPEXPM_END
+if
+80FE:   not actor $PLAYER_ACTOR sphere 1 in_sphere 2802.7 -2356.7 13.5 radius 2.0 2.0 2.0
+else_jump @IMPEXPM_LOOPALT
+if
+80FE:   not actor $PLAYER_ACTOR sphere 1 in_sphere 2445.2 -1761.2 13.9 radius 2.0 2.0 2.0
+else_jump @IMPEXPM_LOOPALT
+jump @IMPEXPM_LOOP
+
+:IMPEXPM_LSDOCKS
+wait 0
+08DA: remove_panel 2@
+08D4: 2@ = create_panel 'BMMT03' position 29.0 170.0 width 180.0 columns 1 interactive 1 background 1 alignment 0
+08DB: set 2@ column 0 header 'BMMT04' data 'BMMT05' 'BMMT06' 'DUMMY' 'DUMMY' 'DUMMY' 'DUMMY' 'DUMMY' 'DUMMY' 'DUMMY' 'DUMMY' 'DUMMY' 'DUMMY'
+01B4: set_player $PLAYER_CHAR can_move 0
+if
+08A7:   car 0@ componentA 1 opened_or_not_present
+else_jump @IMPEXPM_LSDOCKSPANEL
+068A: set_car 0@ repair_componentA 1
+0657: car 0@ open_componentA 1
+jump @IMPEXPM_LSDOCKSPANEL
+
+:IMPEXPM_LSDOCKSPANEL
+wait 0
+if
+80E1:   not player 0 pressed_key 15
+else_jump @IMPEXPM_LSDOCKSREMOVEPANELPLEASE
+if
+00E1:   player 0 pressed_key 16
+else_jump @IMPEXPM_LSDOCKSPANEL
+08D8: 3@ = panel 2@ selected_row
+if
+8039:   not 8@ == 0
+else_jump @IMPEXPM_LSDOCKSDRUGS
+if
+8039:   not 8@ == 1
+else_jump @IMPEXPM_LSDOCKSWEAPONS
+jump @IMPEXPM_LSDOCKSPANEL
+
+:IMPEXPM_LSDOCKSDRUGS
+wait 0
+00BE: text_clear_all
+08DA: remove_panel 2@
+0512: show_permanent_text_box 'BMMT26'
+08D4: 2@ = create_panel 'BMMT05' position 29.0 170.0 width 200.0 columns 1 interactive 1 background 1 alignment 0
+08DB: set 2@ column 0 header 'BMMT21' data 'BMMT18' 'BMMT19' 'BMMT20' 'DUMMY' 'BMMT07' 'DUMMY' 'DUMMY' 'DUMMY' 'DUMMY' 'DUMMY' 'DUMMY' 'DUMMY'
+if
+88A7:   not car 0@ componentA 1 opened_or_not_present
+else_jump @IMPEXPM_LSDOCKSDRUGPANEL
+0657: car 0@ open_componentA 1
+jump @IMPEXPM_LSDOCKSDRUGPANEL
+
+:IMPEXPM_LSDOCKSDRUGPANEL
+wait 0
+08EE: set_panel 2@ column 0 row 0 text_1number GXT 'BMMT18' number 16@
+08EE: set_panel 2@ column 0 row 1 text_1number GXT 'BMMT19' number 17@
+08EE: set_panel 2@ column 0 row 2 text_1number GXT 'BMMT20' number 18@
+08EF: set_panel 2@ column 0 row 4 text_2numbers GXT 'BMMT07' numbers 10@ 9@
+08EE: set_panel 2@ column 0 row 5 text_1number GXT 'BMMT22' number 19@
+08D8: 3@ = panel 2@ selected_row
+if or
+0039:   3@ == 0
+0039:   3@ == 1
+0039:   3@ == 2
+else_jump @IMPEXPM_LSDOCKSDRUGPANEL
+if
+0039:   3@ == 0
+then
+08EE: set_panel 2@ column 0 row 3@ text_1number GXT 'BMMT23' number 16@
+end
+if
+0039:   3@ == 1
+then
+08EE: set_panel 2@ column 0 row 3@ text_1number GXT 'BMMT24' number 17@
+end
+if
+0039:   3@ == 2
+then
+08EE: set_panel 2@ column 0 row 3@ text_1number GXT 'BMMT25' number 18@
+end
+if
+80E1:   not player 0 pressed_key 15
+else_jump @IMPEXPM_LSDOCKS
+if and
+80E1:   not player 0 pressed_key 10
+else_jump @IMPEXPM_LSDOCKSLOADDRUG
+if and
+80E1:   not player 0 pressed_key 11
+else_jump @IMPEXPM_LSDOCKSUNLOADDRUG
+jump @IMPEXPM_LSDOCKSDRUGPANEL
+
+:IMPEXPM_LSDOCKSUNLOADDRUG
+wait 0
+if
+002B:   19 >= 10@
+else_jump @IMPEXPM_LSDOCKSDRUGPANEL
+if
+0039:   3@ == 0
+else_jump @IMPEXPM_LSDOCKSUNLOADDRUG_1
+000A: 16@ += 1
+0006: 20@ = 10000
+jump @IMPEXPM_LSDOCKSUNLOADDRUG_1
+
+:IMPEXPM_LSDOCKSUNLOADDRUG_1
+if
+0039:   3@ == 1
+else_jump @IMPEXPM_LSDOCKSUNLOADDRUG_2
+000A: 17@ += 1
+0006: 20@ = 5000
+jump @IMPEXPM_LSDOCKSUNLOADDRUG_2
+
+:IMPEXPM_LSDOCKSUNLOADDRUG_2
+if
+0039:   3@ == 2
+else_jump @IMPEXPM_LSDOCKSUNLOADDRUG_3
+000A: 18@ += 1
+0006: 20@ = 2500
+jump @IMPEXPM_LSDOCKSUNLOADDRUG_3
+
+:IMPEXPM_LSDOCKSUNLOADDRUG_3
+wait 100
+000A: 10@ += 1
+005A: 19@ += 20@
+005A: 19@ += 20@
+0109: player $PLAYER_CHAR money += 19@
+0062: 19@ -= 20@
+08EE: set_panel 2@ column 0 row 3@ text_1number GXT 'BMMT23' number 16@
+08EE: set_panel 2@ column 0 row 3@ text_1number GXT 'BMMT24' number 17@
+08EE: set_panel 2@ column 0 row 3@ text_1number GXT 'BMMT25' number 18@
+jump @IMPEXPM_LSDOCKSDRUGPANEL
+
+:IMPEXPM_LSDOCKSLOADDRUG
+if
+0029:   10@ >= 1
+else_jump @IMPEXPM_LSDOCKSDRUGPANEL
+if and
+04B5:   16@ >= 1
+0039:   3@ == 0
+else_jump @IMPEXPM_LSDOCKSLOADDRUG_1
+000A: 16@ += -1
+0006: 20@ = 10000
+jump @IMPEXPM_LSDOCKSLOADDRUG_1
+
+:IMPEXPM_LSDOCKSLOADDRUG_1
+if and
+04B5:   17@ >= 1
+0039:   3@ == 1
+else_jump @IMPEXPM_LSDOCKSLOADDRUG_2
+000A: 17@ += -1
+0006: 20@ = 5000
+jump @IMPEXPM_LSDOCKSLOADDRUG_2
+
+:IMPEXPM_LSDOCKSLOADDRUG_2
+if and
+04B5:   18@ >= 1
+0039:   3@ == 2
+else_jump @IMPEXPM_LSDOCKSLOADDRUG_3
+000A: 18@ += -1
+0006: 20@ = 2500
+jump @IMPEXPM_LSDOCKSLOADDRUG_3
+
+:IMPEXPM_LSDOCKSLOADDRUG_3
+wait 100
+000A: 10@ += -1
+0062: 19@ -= 20@
+0062: 19@ -= 20@
+0109: player $PLAYER_CHAR money += 19@
+005A: 19@ += 20@
+08EE: set_panel 2@ column 0 row 3@ text_1number GXT 'BMMT23' number 16@
+08EE: set_panel 2@ column 0 row 3@ text_1number GXT 'BMMT24' number 17@
+08EE: set_panel 2@ column 0 row 3@ text_1number GXT 'BMMT25' number 18@
+jump @IMPEXPM_LSDOCKSDRUGPANEL
+
+:IMPEXPM_LSDOCKSWEAPONS
+wait 0
+jump @IMPEXPM_LSDOCKSPANEL
+
+:IMPEXPM_LSDOCKSREMOVEPANELPLEASE
+wait 0
+03E6: remove_text_box
+08DA: remove_panel 2@
+01B4: set_player $PLAYER_CHAR can_move 1
+jump @IMPEXPM_RELEASE
+
+:IMPEXPM_RELEASE
+wait 0
+if
+00E1:   player 0 pressed_key 16
+else_jump @IMPEXPM_LOOPALT
+jump @IMPEXPM_RELEASE
+
+:IMPEXPM_UNLOAD
+wait 0
+jump @IMPEXPM_UNLOAD
+
+:IMPEXPM_END
+00BC: show_text_highpriority GXT 'BMMT00' time 5000 flag 1
+gosub @IMPEXPM_CLEANUP
+0A92: create_custom_thread "BlackMarket\impexp.cs" 0@
+0A93: end_custom_thread
+
+:IMPEXPM_FIN
+gosub @IMPEXPM_CLEANUP
+0A92: create_custom_thread "BlackMarket\impexp.cs" 16@ 17@ 18@
+0A93: end_custom_thread
+
+:IMPEXPM_CLEANUP
+0164: disable_marker 1@
+0164: disable_marker 21@
+00A6: destroy_car 0@
+0004: $ONMISSION = 0
+0249: release_model #MULE
+return

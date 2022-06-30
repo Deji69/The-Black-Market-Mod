@@ -1,0 +1,1100 @@
+:DEALER
+VAR
+    dealer_char             : int
+    dealer_stage            : int
+    dealer_convo_stage      : int
+    dealer_posx             : float
+    dealer_posy             : float
+    dealer_posz             : float
+    dealer_dealerdist       : float
+    dealer_buyer            : int
+    dealer_buyer_car        : int
+    dealer_buyerposx        : float
+    dealer_buyerposy        : float
+    dealer_buyerposz        : float
+    dealer_fightmode        : int
+    dealer_tempint1         : int
+    dealer_tempint2         : int
+    dealer_task_sequence    : int
+    dealer_timelimit        : int
+    dealer_zonename         : string
+    dealer_marker           : int
+    dealer_hasdrugs         : int
+    dealer_drugs            : array 6 of int
+    dealer_num_weed         : int
+    dealer_num_coke         : int
+    dealer_num_heroin       : int
+    dealer_num_ecstasy      : int
+    dealer_num_steroid      : int
+    dealer_num_shroom       : int
+    dealer_money            : int
+    dealer_timera           : int
+    dealer_timerb           : int
+END
+
+SCRIPT_NAME "BMDEAL"
+
+IF AND
+    NOT IS_CHAR_DEAD dealer_char
+    NOT IS_CHAR_DEAD scplayer
+THEN
+    IF dealer_buyer == 0
+    THEN
+        // Should never need to run (failsafe)...
+        GET_CHAR_COORDINATES dealer_char dealer_posx dealer_posy dealer_posz
+        GET_NAME_OF_ZONE dealer_posx dealer_posy dealer_posz s$9451
+        dealer_zonename = s$9451
+        COPY_CHAR_DECISION_MAKER 65539 $9453
+        SET_CHAR_DECISION_MAKER dealer_char $9453
+    ELSE
+        CLEAR_CONVERSATION_FOR_CHAR dealer_char
+    END
+    
+    // Generate some druggies
+    dealer_hasdrugs = 0
+    
+    IF $ONMISSION == 0
+    THEN
+        FOR dealer_tempint1 = 0 TO 5
+            GENERATE_RANDOM_INT_IN_RANGE -10 10 dealer_tempint2
+            IF dealer_tempint2 <= 0
+            THEN
+                dealer_tempint2 = 0
+            ELSE
+                dealer_hasdrugs = 1
+            END
+            0085: dealer_drugs[dealer_tempint1] = dealer_tempint2
+        END
+    END
+    
+    // If the dealer has no drugs, he'll just walk around almost like a normal ped
+    IF dealer_hasdrugs == 1
+    THEN
+        GOSUB @Dealer_StartConvo
+    END
+    
+    // Money, money, money $500-$2500
+    GENERATE_RANDOM_INT_IN_RANGE 5 26 dealer_money
+    IF dealer_hasdrugs == 1
+    THEN dealer_money *= 100
+    ELSE dealer_money *= 150    // if he got no drugs, give him some sales money
+    END
+    SET_CHAR_MONEY dealer_char dealer_money
+    
+    // Generate drug prices
+    CALL @GenerateDrugPrices 0
+ELSE
+    GOSUB @DEALER_End
+END
+
+WHILE TRUE
+    WAIT 0
+    IF NOT IS_CHAR_DEAD dealer_char
+    THEN
+        IF NOT IS_CHAR_DEAD scplayer
+        THEN
+		    dealer_tempint1 = 1
+            IF OR
+                HAS_CHAR_BEEN_DAMAGED_BY_CHAR dealer_char scplayer
+                IS_PLAYER_TARGETTING_CHAR player1 dealer_char
+            THEN
+                IF OR
+                    HAS_CHAR_BEEN_DAMAGED_BY_CHAR dealer_char scplayer
+                    NOT IS_CHAR_HOLDING_WEAPON scplayer WEAPONTYPE_ANYMELEE
+                THEN
+                    GOSUB @DEALER_BuyerFlee
+                    GOSUB @DEALER_PlayerThreatWithGun
+                    dealer_tempint1 = 0
+                END
+            END
+            IF dealer_tempint1 == 1
+            THEN
+                IF NOT dealer_threatened == 0
+                THEN
+                    dealer_threatened = 0
+                    GOSUB @DEALER_DealerThreatOver
+                END
+                IF dealer_phone_stage == 0
+                THEN
+                    GOSUB @DEALER_ArmDealer
+                    GOSUB @DEALER_GetBuyer
+                    GOSUB @DEALER_Main
+                ELSE
+                    GOSUB @DEALER_Phonecall
+                END
+            END
+		ELSE
+			GOSUB @DEALER_End
+		END
+	ELSE
+		GOSUB @DEALER_End
+	END
+END
+
+:DEALER_GetBuyer
+IF dealer_buyer == -1
+THEN
+    IF AND
+        dealer_hasdrugs == 1
+        dealer_convo_stage < 4
+    THEN
+        IF dealer_timera > 15000
+        THEN
+            GET_CHAR_COORDINATES dealer_char dealer_posx dealer_posy dealer_posz
+            FIND_NEAREST_CHAR_WITH_BUY_DRUGS_ATTRIBUTE dealer_posx dealer_posy dealer_posz 6.0 dealer_buyer
+            IF NOT dealer_buyer == -1
+            THEN
+                IF NOT IS_GROUP_MEMBER dealer_buyer $PLAYER_GROUP
+                THEN
+                    IF CALL @IsPedOnDrugs 1 dealer_buyer
+                    THEN
+                        dealer_buyer = -1
+                    ELSE
+                        IF IS_CHAR_IN_ANY_CAR dealer_buyer
+                        THEN STORE_CAR_CHAR_IS_IN_NO_SAVE dealer_buyer dealer_buyercar
+                        END
+                    END
+                ELSE
+                    dealer_buyer = -1
+                END
+            ELSE
+                GENERATE_RANDOM_INT_IN_RANGE 0 6 dealer_tempint1
+                IF dealer_tempint1 >= 4
+                THEN
+                    // New brain code - Dealer gets phonecalls...
+                    REQUEST_MODEL #CELLPHONE
+                    LOAD_MISSION_AUDIO 3 SOUND_MOBRING
+                    IF dealer_hasdrugs == 1
+                    THEN
+                        PAUSE_SCRIPTED_CONVERSATION dealer_char TRUE
+                    END
+                    dealer_phone_stage = 1
+                ELSE
+                    dealer_timera = 0
+                END
+            END
+        END
+    ELSE
+        dealer_buyer = -1
+    END
+ELSE
+    IF OR
+        IS_CHAR_DEAD dealer_buyer
+        IS_CHAR_RESPONDING_TO_EVENT dealer_char EVENT_ACQUAINTANCE_PED_HATE
+    THEN
+        dealer_buyer = -1
+	END
+END
+RETURN
+
+:DEALER_Phonecall
+SWITCH dealer_phone_stage 5 0 @DEALER_Phonecall_End 0 @DEALER_Phonecall_End 1 @DEALER_Phonecall_1 2 @DEALER_Phonecall_2 3 @DEALER_Phonecall_3 4 @DEALER_Phonecall_4 -1 0 -1 0
+
+:DEALER_Phonecall_1
+IF AND
+    HAS_MODEL_LOADED #CELLPHONE
+    HAS_MISSION_AUDIO_LOADED 3
+THEN
+    TASK_PAUSE dealer_char 1
+    PLAY_SOUND_FROM_PED 3 dealer_char
+    PLAY_MISSION_AUDIO 3
+    dealer_timera = 0
+    dealer_timerb = 0
+    dealer_phone_stage += 1
+END
+GOTO @DEALER_Phonecall_End
+
+:DEALER_Phonecall_2
+IF dealer_timerb < 15000
+THEN
+    IF dealer_timera > 3200
+    THEN
+        PLAY_MISSION_AUDIO 3
+        dealer_timera = 0
+    END
+    IF dealer_timerb > 5000
+    THEN
+        IF NOT IS_CHAR_RESPONDING_TO_EVENT dealer_char EVENT_ACQUAINTANCE_PED_HATE
+        THEN
+        	GET_SCRIPT_TASK_STATUS dealer_char 0x605 dealer_tempint1
+        	IF NOT dealer_tempint1 == 7
+        	THEN
+                CLEAR_CHAR_TASKS dealer_char
+            END
+            TASK_USE_MOBILE_PHONE dealer_char 1
+            dealer_phone_stage += 1
+            dealer_timerb = 0
+        END
+    END
+ELSE
+    dealer_phone_stage = 0
+    GOSUB @DEALER_Phonecall_Stop
+END
+GOTO @DEALER_Phonecall_End
+
+:DEALER_Phonecall_3
+GET_SCRIPT_TASK_STATUS dealer_char 0x729 dealer_tempint1
+IF OR
+    dealer_timerb > 14000
+    dealer_tempint1 == 7
+THEN
+    IF NOT dealer_tempint1 == 7
+    THEN
+        TASK_USE_MOBILE_PHONE dealer_char 0
+    END
+    dealer_phone_stage += 1
+END
+GOTO @DEALER_Phonecall_End
+
+:DEALER_Phonecall_4
+GET_SCRIPT_TASK_STATUS dealer_char 0x729 dealer_tempint1
+IF dealer_tempint1 == 7
+THEN
+    dealer_phone_stage = 0
+    GOSUB @DEALER_Phonecall_Stop
+END
+GOTO @DEALER_Phonecall_End
+
+:DEALER_Phonecall_End
+RETURN
+
+:DEALER_Phonecall_Stop
+IF AND
+    dealer_hasdrugs == 1
+    dealer_convo_response == 0
+THEN
+    PAUSE_SCRIPTED_CONVERSATION dealer_char FALSE
+END
+MARK_MODEL_AS_NO_LONGER_NEEDED #CELLPHONE
+CLEAR_MISSION_AUDIO 3
+dealer_timera = 0
+RETURN
+
+:DEALER_BuyerFlee
+MARK_CHAR_AS_NO_LONGER_NEEDED dealer_buyer
+IF NOT IS_CHAR_DEAD dealer_buyer
+THEN
+	IF NOT IS_CAR_DEAD dealer_buyercar
+	THEN
+		IF NOT IS_CAR_ON_FIRE dealer_buyercar
+		THEN
+            TASK_CAR_DRIVE_WANDER dealer_buyer dealer_buyercar 20.0 2
+		END
+	END
+END
+dealer_timera = 0
+dealer_buyer = -1
+RETURN
+
+:DEALER_GetDoesDealerApproachBuyer
+IF NOT IS_CHAR_DEAD dealer_char
+THEN
+	IF NOT IS_CHAR_DEAD dealer_buyer
+	THEN
+		GET_CHAR_COORDINATES dealer_char dealer_posx dealer_posy dealer_posz
+		GET_CHAR_COORDINATES dealer_buyer dealer_buyerposx dealer_buyerposy dealer_buyerposz
+		GET_DISTANCE_BETWEEN_COORDS_2D dealer_posx dealer_posy dealer_buyerposx dealer_buyerposy dealer_dealerdist
+		IF dealer_dealerdist > 2.0
+		THEN
+            dealer_tempint1 = 1
+		ELSE
+            dealer_tempint1 = 0
+		END
+	END
+END
+RETURN
+
+:DEALER_ArmDealer
+IF HAS_MODEL_LOADED #COLT45
+THEN
+	IF NOT HAS_CHAR_GOT_WEAPON dealer_char WEAPONTYPE_PISTOL
+	THEN
+	    GIVE_WEAPON_TO_CHAR dealer_char WEAPONTYPE_PISTOL 51
+		IF NOT dealer_convo_response == 1
+		THEN
+            SET_CURRENT_CHAR_WEAPON dealer_char WEAPONTYPE_UNARMED
+		ELSE
+            SET_CURRENT_CHAR_WEAPON dealer_char WEAPONTYPE_PISTOL
+		END
+	END
+END
+RETURN
+
+:DEALER_Main
+SWITCH dealer_stage 4 1 @DEALER_MainReset 0 @DEALER_Main1 1 @DEALER_Main2 2 @DEALER_Main3 3 @DEALER_Main4 -1 0 -1 0 -1 0
+
+:DEALER_Main1
+IF NOT dealer_hasdrugs == 0
+THEN
+    IF IS_SCRIPTED_SPEECH_PLAYING dealer_char
+    THEN
+        IF dealer_convo_response == 0
+        THEN
+            IF CALL @IsDealNotGoingOn 0
+            THEN
+            	dealer_convo_stage = 0
+            	dealer_stage = 3
+            	GOSUB @DEALER_Convo
+            END
+        END
+    ELSE
+    	IF dealer_buyer > -1
+    	THEN
+    		GOSUB @DEALER_GetDoesDealerApproachBuyer
+    		
+    		IF dealer_tempint1 == 0
+    		THEN
+    			dealer_stage = 2
+    			dealer_convo_stage = 0
+    			GOSUB @DEALER_Offer2Ped
+    		ELSE
+    			dealer_stage = 1
+    			dealer_convo_stage = 0
+    			GOSUB @DEALER_Deal2Ped
+    		END
+    	ELSE
+    		GOSUB @DEALER_Idle
+    	END
+    END
+ELSE
+    GOSUB @DEALER_Idle
+END
+GOTO @DEALER_MainDef
+
+:DEALER_Main2
+IF AND
+    NOT dealer_hasdrugs == 0
+	dealer_buyer > -1
+THEN
+	GOSUB @DEALER_Deal2Ped
+ELSE
+	dealer_stage = 0
+	dealer_convo_stage = 0
+	GOSUB @DEALER_Idle
+END
+GOTO @DEALER_MainDef
+
+:DEALER_Main3
+IF AND
+    NOT dealer_hasdrugs == 0
+    dealer_buyer > -1
+THEN
+    GOSUB @DEALER_Offer2Ped
+ELSE
+	dealer_stage = 0
+	dealer_convo_stage = 0
+	GOSUB @DEALER_Idle
+END
+GOTO @DEALER_MainDef
+
+:DEALER_Main4
+IF AND
+    NOT dealer_hasdrugs == 0
+    dealer_convo_response == 0
+THEN
+    GOSUB @DEALER_Convo
+ELSE
+    dealer_stage = 0
+    dealer_convo_stage = 0
+    GOSUB @DEALER_Idle
+END
+GOTO @DEALER_MainDef
+
+:DEALER_MainReset
+GOSUB @DealerHook_End
+GOTO @DEALER_MainDef
+
+:DEALER_MainDef
+RETURN
+
+:DEALER_Idle
+SWITCH dealer_convo_stage 3 0 @DEALER_IdleEnd 0 @DEALER_Idle1 1 @DEALER_Idle2 2 @DEALER_Idle3 -1 @DEALER_IdleEnd -1 @DEALER_IdleEnd -1 @DEALER_IdleEnd -1 @DEALER_IdleEnd
+
+:DEALER_Idle1
+IF NOT IS_CHAR_RESPONDING_TO_EVENT dealer_char EVENT_ACQUAINTANCE_PED_HATE
+THEN
+    IF dealer_hasdrugs == 1
+	THEN PAUSE_SCRIPTED_CONVERSATION dealer_char 1
+	END
+	GET_SCRIPT_TASK_STATUS dealer_char 0x605 dealer_tempint1
+	IF dealer_tempint1 == 7
+	THEN
+		TASK_PLAY_ANIM dealer_char "DEALER_IDLE" "DEALER" 4.0 1 0 0 0 -1
+		dealer_timerb = 0
+		dealer_timelimit = 3000
+		dealer_convo_stage += 1
+	END
+END
+GOTO @DEALER_IdleEnd
+
+:DEALER_Idle2
+IF dealer_timerb >= dealer_timelimit
+THEN
+	SET_CHAR_WANTED_BY_POLICE dealer_char 0
+	GENERATE_RANDOM_INT_IN_RANGE 1 15 dealer_tempint1
+	IF dealer_tempint1 > 5
+	THEN
+		IF dealer_tempint1 > 10
+		THEN
+			GET_SCRIPT_TASK_STATUS dealer_char 0x5C9 dealer_tempint1
+			IF dealer_tempint1 == 7
+			THEN
+				TASK_LOOK_ABOUT dealer_char -1
+				dealer_timelimit = 2000
+			END
+		ELSE
+			GET_SCRIPT_TASK_STATUS dealer_char 0x5DE dealer_tempint1
+			IF dealer_tempint1 == 7
+			THEN
+				TASK_WANDER_STANDARD dealer_char
+				dealer_timelimit = 1500
+			END
+		END
+	ELSE
+        IF dealer_hasdrugs == 1
+        THEN
+            GET_SCRIPT_TASK_STATUS dealer_char 0x605 dealer_tempint1
+            IF dealer_tempint1 == 7
+            THEN
+            	TASK_PLAY_ANIM dealer_char "DEALER_IDLE" "DEALER" 4.0 1 0 0 0 -1
+            	dealer_timelimit = 3000
+            END
+        ELSE
+            dealer_timelimit = 1500
+        END
+	end
+	dealer_timerb = 0
+	dealer_convo_stage += 1
+END
+GOTO @DEALER_IdleEnd
+
+:DEALER_Idle3
+IF dealer_timerb >= dealer_timelimit
+THEN
+    dealer_convo_stage = 1
+END
+GOTO @DEALER_IdleEnd
+
+:DEALER_IdleEnd
+RETURN
+
+:DEALER_Deal2Ped
+SWITCH dealer_convo_stage 6 0 @DEALER_Deal2PedEnd 0 @DEALER_Deal2Ped1 1 @DEALER_Deal2Ped2 2 @DEALER_Deal2Ped3 3 @DEALER_Deal2Ped4 4 @DEALER_Deal2Ped5 5 @DEALER_Deal2Ped6 -1 @DEALER_Deal2PedEnd
+
+:DEALER_Deal2Ped1
+IF NOT dealer_convo_response == 1
+THEN
+    PAUSE_SCRIPTED_CONVERSATION dealer_char FALSE
+END
+TASK_LOOK_ABOUT dealer_char -1
+TASK_GO_TO_CHAR dealer_buyer dealer_char 20000 1.0
+dealer_timerb = 0
+dealer_convo_stage += 1
+GOTO @DEALER_Deal2PedEnd
+
+:DEALER_Deal2Ped2
+GET_CHAR_COORDINATES dealer_char dealer_posx dealer_posy dealer_posz
+GET_CHAR_COORDINATES dealer_buyer dealer_buyerposx dealer_buyerposy dealer_buyerposz
+GET_DISTANCE_BETWEEN_COORDS_2D dealer_posx dealer_posy dealer_buyerposx dealer_buyerposy dealer_dealerdist
+TASK_LOOK_AT_CHAR dealer_char dealer_buyer -1
+IF dealer_dealerdist <= 1.8
+THEN
+	dealer_convo_stage += 1
+ELSE
+	IF
+		dealer_timerb > 20000
+	THEN
+		GOSUB @DEALER_BuyerFlee
+		dealer_convo_stage = 0
+		dealer_stage = 0
+	END
+END
+GOTO @DEALER_Deal2PedEnd
+
+:DEALER_Deal2Ped3
+TASK_TURN_CHAR_TO_FACE_CHAR dealer_buyer dealer_char
+TASK_TURN_CHAR_TO_FACE_CHAR dealer_char dealer_buyer
+dealer_convo_stage += 1
+GOTO @DEALER_Deal2PedEnd
+
+:DEALER_Deal2Ped4
+GET_SCRIPT_TASK_STATUS dealer_buyer 0x639 dealer_tempint1
+IF dealer_tempint1 == 7
+THEN
+	GET_SCRIPT_TASK_STATUS dealer_buyer 0x5BA dealer_tempint1
+	IF dealer_tempint1 == 7
+	THEN
+		TASK_STAND_STILL dealer_buyer -1
+	END
+END
+GET_SCRIPT_TASK_STATUS dealer_char 0x639 dealer_tempint1
+IF dealer_tempint1 == 7
+THEN
+	GET_SCRIPT_TASK_STATUS dealer_char 0x5BA dealer_tempint1
+	IF dealer_tempint1 == 7
+	THEN
+		TASK_STAND_STILL dealer_char -1
+	END
+	GET_SCRIPT_TASK_STATUS dealer_buyer 0x605 dealer_tempint1
+	IF dealer_tempint1 == 7
+	THEN
+		SAY_AMBIENT_SPEECH dealer_buyer 83 dealer_tempint1
+		TASK_PLAY_ANIM dealer_buyer "SHOP_PAY" "DEALER" 4.0 0 0 0 0 -1
+		dealer_convo_stage += 1
+	END
+END
+GOTO @DEALER_Deal2PedEnd
+
+:DEALER_Deal2Ped5
+GET_SCRIPT_TASK_STATUS dealer_buyer 0x605 dealer_tempint1
+IF dealer_tempint1 == 7
+THEN
+	TASK_CLEAR_LOOK_AT dealer_char
+	GET_SCRIPT_TASK_STATUS dealer_buyer 0x605 dealer_tempint1
+	IF dealer_tempint1 == 7
+	THEN
+		TASK_PLAY_ANIM dealer_buyer "DRUGS_BUY" "DEALER" 4.0 0 0 0 0 -1
+		SET_CHAR_WANTED_BY_POLICE dealer_buyer 1
+	end
+	GET_SCRIPT_TASK_STATUS dealer_char 0x605 dealer_tempint1
+	IF dealer_tempint1 == 7
+	THEN
+		SAY_AMBIENT_SPEECH dealer_char 84 dealer_tempint1
+		TASK_PLAY_ANIM dealer_char "DEALER_DEAL" "DEALER" 4.0 0 0 0 0 -1
+		SET_CHAR_WANTED_BY_POLICE dealer_char 1
+		dealer_convo_stage += 1
+	END
+END
+GOTO @DEALER_Deal2PedEnd
+
+:DEALER_Deal2Ped6
+GET_SCRIPT_TASK_STATUS dealer_buyer 0x605 dealer_tempint1
+IF dealer_tempint1 == 7
+THEN
+	GET_SCRIPT_TASK_STATUS dealer_buyer 0x5BA dealer_tempint1
+	IF dealer_tempint1 == 7
+	THEN
+        TASK_STAND_STILL dealer_buyer -1
+	END
+END
+GET_SCRIPT_TASK_STATUS dealer_char 0x605 dealer_tempint1
+IF dealer_tempint1 == 7
+THEN
+	SET_CHAR_DRUGGED_UP dealer_buyer 1
+	GOSUB @DEALER_BuyerFlee
+	dealer_convo_stage = 0
+	dealer_stage = 0
+END
+GOTO @DEALER_Deal2PedEnd
+
+:DEALER_Deal2PedEnd
+RETURN
+
+:DEALER_Offer2Ped
+SWITCH dealer_convo_stage 3 0 @DEALER_Offer2PedEnd 0 @DEALER_Offer2Ped1 1 @DEALER_Offer2Ped2 2 @DEALER_Offer2Ped3 -1 @DEALER_Offer2PedEnd -1 @DEALER_Offer2PedEnd -1 @DEALER_Offer2PedEnd -1 @DEALER_Offer2PedEnd
+
+:DEALER_Offer2Ped1
+IF NOT dealer_convo_response == 1
+THEN PAUSE_SCRIPTED_CONVERSATION dealer_char FALSE
+END
+GET_CHAR_COORDINATES dealer_char dealer_posx dealer_posy dealer_posz
+TASK_LOOK_AT_CHAR dealer_char dealer_buyer -1
+TASK_FOLLOW_FOOTSTEPS dealer_char dealer_buyer
+SAY_AMBIENT_SPEECH dealer_char 84 dealer_tempint1
+dealer_timerb = 0
+dealer_convo_stage += 1
+GOTO @DEALER_Offer2PedEnd
+
+:DEALER_Offer2Ped2
+IF dealer_timerb > 6000
+THEN
+	TASK_CLEAR_LOOK_AT dealer_char
+	TASK_FOLLOW_NODE_ROUTE dealer_char dealer_posx dealer_posy dealer_posz 4 -2
+	dealer_convo_stage += 1
+END
+GOTO @DEALER_Offer2PedEnd
+
+:DEALER_Offer2Ped3
+GET_SCRIPT_TASK_STATUS dealer_char 0x5F5 dealer_tempint1
+IF dealer_tempint1 == 7
+THEN
+	GOSUB @DEALER_BuyerFlee
+	dealer_convo_stage = 0
+	dealer_stage = 0
+END
+GOTO @DEALER_Offer2PedEnd
+
+:DEALER_Offer2PedEnd
+RETURN
+
+:Dealer_StartConvo
+START_SETTING_UP_CONVERSATION dealer_char
+ADD_LINE_TO_CONVERSATION "_BMD1" "_BMD2" "_BMD3" 192 194 193
+SET_UP_CONVERSATION_NODE_WITH_SCRIPTED_SPEECH "_BMD3" 79
+IF ARE_SUBTITLES_SWITCHED_ON
+THEN FINISH_SETTING_UP_CONVERSATION
+ELSE FINISH_SETTING_UP_CONVERSATION_NO_SUBTITLES
+END
+RETURN
+
+:DEALER_GetNumDrugs
+FOR dealer_tempint2 = MIN_DRUG TO MAX_DRUG
+    005A: dealer_tempint2 += DEALER_DRUGS[dealer_tempint2]
+END
+RETURN
+
+:DEALER_DealerThreatOver
+IF dealer_convo_response == 1
+THEN
+    IF IS_CHAR_RESPONDING_TO_EVENT dealer_char EVENT_ACQUAINTANCE_PED_HATE
+    THEN
+        GET_INT_STAT STAT_TotalRespect dealer_tempint1
+        
+        IF dealer_tempint1 > 500
+        THEN
+            CLEAR_CHAR_DECISION_MAKER_EVENT_RESPONSE $9453 EVENT_ACQUAINTANCE_PED_HATE
+        END
+    END
+    dealer_convo_response = 0
+END
+RETURN
+
+:DEALER_PlayerThreatWithGun
+CLEAR_HELP
+TASK_CLEAR_LOOK_AT dealer_char
+IF NOT dealer_convo_response == 1
+THEN
+    dealer_convo_response = 1
+    dealer_timera = 0
+    
+    IF dealer_hasdrugs == 1
+    THEN
+        PAUSE_SCRIPTED_CONVERSATION dealer_char TRUE
+    END
+    
+    SET_CHAR_RELATIONSHIP dealer_char PED_RELATIONSHIP_HATE PEDTYPE_Player1
+    CLEAR_CHAR_DECISION_MAKER_EVENT_RESPONSE $9453 EVENT_ACQUAINTANCE_PED_HATE
+    
+    GET_INT_STAT STAT_TotalRespect dealer_tempint1
+    
+    IF dealer_tempint1 > 500
+    THEN
+        ADD_CHAR_DECISION_MAKER_EVENT_RESPONSE $9453 EVENT_ACQUAINTANCE_PED_HATE TASK_SIMPLE_HANDS_UP 0.0 100.0 0.0 0.0 0 1
+    ELSE
+        IF HAS_CHAR_GOT_WEAPON dealer_char WEAPONTYPE_PISTOL
+        THEN
+            SET_CURRENT_CHAR_WEAPON dealer_char WEAPONTYPE_PISTOL
+        END
+        ADD_CHAR_DECISION_MAKER_EVENT_RESPONSE $9453 EVENT_ACQUAINTANCE_PED_HATE TASK_COMPLEX_KILL_PED_ON_FOOT 0.0 100.0 0.0 0.0 1 1
+    END
+    dealer_convo_stage = 0
+    dealer_stage = 0
+ELSE
+    IF NOT dealer_threatened == 2
+    THEN
+        IF dealer_threatened == 0
+        THEN
+            SAY_AMBIENT_SPEECH scplayer 78 dealer_tempint1
+            dealer_threatened = 1
+        ELSE
+            IF dealer_timera > 5000
+            THEN
+                GET_INT_STAT STAT_TotalRespect dealer_tempint1
+                IF dealer_tempint1 > 500
+                THEN
+                    SAY_AMBIENT_SPEECH dealer_char 75 dealer_tempint1
+                    dealer_hasdrugs = 0
+                ELSE
+                    SAY_AMBIENT_SPEECH dealer_char 76 dealer_tempint1
+                END
+                dealer_threatened = 2
+            END
+        END
+    END
+END
+RETURN
+
+:DEALER_Convo
+SWITCH dealer_convo_stage 9 0 @DEALER_ConvoDef 0 @DEALER_Convo1 1 @DEALER_Convo2 2 @DEALER_Convo3 3 @DEALER_Convo4 4 @DEALER_Convo5 5 @DEALER_Convo6 6 @DEALER_Convo7
+SWITCH_CASES 7 @DEALER_Convo8 8 @DEALER_Convo9 -1 0 -1 0 -1 0 -1 0 -1 0 -1 0 -1 0
+
+:DEALER_Convo1
+dealer_timerb = 0
+TASK_TURN_CHAR_TO_FACE_CHAR dealer_char scplayer
+dealer_convo_stage += 1
+GOTO @DEALER_ConvoDef
+
+:DEALER_Convo2
+IF NOT IS_HELP_MESSAGE_BEING_DISPLAYED
+THEN
+	IF AND
+		NOT IS_CONVERSATION_AT_NODE dealer_char "_BMD2"
+		NOT IS_CONVERSATION_AT_NODE dealer_char "_BMD3"
+	THEN
+		PRINT_HELP "TALK_1"
+	END
+END
+GET_SCRIPT_TASK_STATUS dealer_char 0x639 dealer_tempint1
+IF dealer_tempint1 == 7
+THEN
+	TASK_LOOK_AT_CHAR dealer_char scplayer -1
+	GET_SCRIPT_TASK_STATUS dealer_char 0x5BA dealer_tempint1
+	IF dealer_tempint1 == 7
+	THEN
+		TASK_STAND_STILL dealer_char -2
+	END
+	dealer_convo_stage += 1
+ELSE
+	IF OR
+		NOT IS_SCRIPTED_SPEECH_PLAYING dealer_char
+		dealer_timerb > 15000
+	THEN
+		TASK_CLEAR_LOOK_AT dealer_char
+		dealer_convo_stage = 0
+		dealer_stage = 0
+	END
+END
+GOTO @DEALER_ConvoDef
+
+:DEALER_Convo3
+IF NOT IS_PLAYER_CONTROL_ON player1
+THEN
+    CLEAR_HELP
+    PAUSE_SCRIPTED_CONVERSATION dealer_char 1
+    dealer_convo_stage = 0
+    dealer_stage = 0
+    GOTO @DEALER_ConvoDef
+END
+IF AND
+    IS_CONVERSATION_AT_NODE dealer_char "_BMD3"
+    dealer_timerb > 9000
+THEN
+    CLEAR_HELP
+    PAUSE_SCRIPTED_CONVERSATION dealer_char 1
+    IF dealer_convo_response == 0
+    THEN
+        dealer_convo_response = 2
+    END
+    dealer_convo_stage = 0
+    dealer_stage = 0
+END
+IF IS_BUTTON_PRESSED PAD1 DPADRIGHT
+THEN
+    CLEAR_HELP
+    PAUSE_SCRIPTED_CONVERSATION dealer_char 1
+    SET_CHAR_WANTED_BY_POLICE dealer_char FALSE
+    
+    SAY_AMBIENT_SPEECH scplayer 194 dealer_tempint1
+    
+    SET_PLAYER_CONTROL player1 OFF
+    HIDE_CHAR_WEAPON_FOR_SCRIPTED_CUTSCENE scplayer TRUE
+    SHUT_CHAR_UP scplayer TRUE
+    SET_CHAR_WANTED_BY_POLICE dealer_char FALSE
+    
+    TASK_SCRATCH_HEAD scplayer
+    TASK_GO_TO_CHAR dealer_char scplayer 2000 1.0
+    
+    DISPLAY_RADAR FALSE
+    
+    ATTACH_CAM_TO_CHAR_POINT_AT_CHAR scplayer 0.5 -1.0 1.1 dealer_char 0.0 JUMP_CUT
+    
+    CALL @SetIsDealGoingOn 1 ON
+    dealer_stage = 3
+    dealer_convo_stage = 4
+    dealer_tempint2 = 0
+    GOTO @DEALER_ConvoDef
+END
+CALL @GetIsDealGoingOn 0 TEMP_1
+IF OR
+    NOT IS_SCRIPTED_SPEECH_PLAYING dealer_char
+    NOT TEMP_1 == 0
+    dealer_timerb > 15000
+THEN
+    TASK_CLEAR_LOOK_AT dealer_char
+    dealer_convo_stage = 0
+    dealer_stage = 0
+END
+GOTO @DEALER_ConvoDef
+
+:DEALER_Convo4
+IF dealer_timerb > 2000
+THEN
+    CLEAR_CHAR_DECISION_MAKER_EVENT_RESPONSE $9453 EVENT_ACQUAINTANCE_PED_DISLIKE
+    SET_CURRENT_CHAR_WEAPON dealer_char 0
+    dealer_convo_stage = 0
+    dealer_stage = 0
+END
+dealer_tempint2 = 0
+GOTO @DEALER_ConvoDef
+
+:DEALER_Convo5
+GET_CHAR_COORDINATES dealer_char dealer_posx dealer_posy dealer_posz
+GET_CHAR_COORDINATES scplayer dealer_buyerposx dealer_buyerposy dealer_buyerposz
+GET_DISTANCE_BETWEEN_COORDS_2D dealer_posx dealer_posy dealer_buyerposx dealer_buyerposy dealer_dealerdist
+TASK_LOOK_AT_CHAR dealer_char scplayer -1
+IF dealer_dealerdist <= 1.8
+THEN
+    TASK_TURN_CHAR_TO_FACE_CHAR dealer_char scplayer
+    TASK_TURN_CHAR_TO_FACE_CHAR scplayer dealer_char
+    dealer_convo_stage += 1
+    dealer_tempint2 = 0
+END
+GOTO @DEALER_ConvoDef
+
+:DEALER_Convo6
+GET_SCRIPT_TASK_STATUS dealer_char 0x639 dealer_tempint1
+IF dealer_tempint1 == 7
+THEN
+    GET_SCRIPT_TASK_STATUS dealer_char 0x5C9 dealer_tempint1
+    IF dealer_tempint1 == 7
+    THEN
+        TASK_LOOK_ABOUT dealer_char -1
+    END
+    IF CALL @DEALER_NeedToShowTutorial 0
+    THEN
+        PRINT_HELP_STRING "Use ~k~~GO_LEFT~/~k~~GO_RIGHT~ to select drugs to purchase."
+        dealer_timerb = 0
+        dealer_deal2player = 1
+    ELSE
+        dealer_deal2player = 2
+    END
+    dealer_convo_stage += 1
+END
+GOTO @DEALER_ConvoDef
+
+:DEALER_Convo7
+IF dealer_deal2player == 1
+THEN
+    IF dealer_timerb >= 4000
+    THEN
+        IF dealer_tempint2 < 4
+        THEN
+            IF dealer_tempint2 == 0
+            THEN
+                PRINT_HELP_STRING "Use ~k~~GO_FORWARD~/~k~~GO_BACK~ to change the quantity of a drug purchase."
+            END
+            IF dealer_tempint2 == 1
+            THEN
+                PRINT_HELP_STRING "Use ~k~~PED_SPRINT~ to finish order."
+            END
+            IF dealer_tempint2 == 2
+            THEN
+                PRINT_HELP_STRING "Use ~k~~VEHICLE_ENTER_EXIT~ to cancel order."
+            END
+            IF dealer_tempint2 == 3
+            THEN
+                PRINT_HELP_STRING "The cost of the drugs is determined by your reputation and respect."
+            END
+            dealer_tempint2 += 1
+            dealer_timerb = 0
+        ELSE
+            CALL @DEALER_SetTutorialShown 1 TRUE
+            dealer_deal2player = 2
+        END
+    END
+END
+IF dealer_deal2player == 2
+THEN
+    dealer_tempint2 = 0
+    GET_SCRIPT_TASK_STATUS dealer_char 0x618 dealer_tempint1
+    IF NOT dealer_tempint1 == 7
+    THEN
+        IF dealer_timerb > 8000
+        THEN
+            dealer_tempint1 = 0.0
+            IF IS_CHAR_PLAYING_ANIM dealer_char "DEALER_IDLE"
+            THEN
+                GET_CHAR_ANIM_CURRENT_TIME dealer_char "DEALER_IDLE" dealer_tempint1
+            END
+            IF dealer_tempint1 > 0.9
+            THEN dealer_tempint2 = 1
+            END
+        END
+    ELSE
+        dealer_tempint2 = 1
+    END
+    IF dealer_tempint2 == 1
+    THEN
+        GENERATE_RANDOM_INT_IN_RANGE 0 5 dealer_tempint1
+        CLEAR_SEQUENCE_TASK dealer_task_sequence
+        OPEN_SEQUENCE_TASK dealer_task_sequence
+        IF dealer_tempint1 == 1
+        THEN
+            TASK_PLAY_ANIM_NON_INTERRUPTABLE -1 "DEALER_IDLE_01" "DEALER" 4.0 0 0 0 1 -1
+        ELSE
+            IF dealer_tempint1 == 2
+            THEN
+                TASK_PLAY_ANIM_NON_INTERRUPTABLE -1 "DEALER_IDLE_02" "DEALER" 4.0 0 0 0 1 -1
+            ELSE
+                IF dealer_tempint1 == 3
+                THEN
+                    TASK_PLAY_ANIM_NON_INTERRUPTABLE -1 "DEALER_IDLE_03" "DEALER" 4.0 0 0 0 1 -1
+                END
+            END
+        END
+        TASK_PLAY_ANIM_NON_INTERRUPTABLE -1 "DEALER_IDLE" "DEALER" 4.0 1 0 0 0 -1
+        CLOSE_SEQUENCE_TASK dealer_task_sequence
+        TASK_PERFORM_SEQUENCE dealer_char dealer_task_sequence
+        IF dealer_tempint1 == 4
+        THEN
+            TASK_SCRATCH_HEAD scplayer
+        END
+        dealer_timerb = 0
+    END
+END
+IF dealer_deal2player == 3
+THEN
+    TASK_TURN_CHAR_TO_FACE_CHAR dealer_char scplayer
+    TASK_TURN_CHAR_TO_FACE_CHAR scplayer dealer_char
+    //dealer_deal2player = 0
+    CLEAR_HELP
+    dealer_convo_stage += 1
+END
+IF dealer_deal2player == 4
+THEN
+    RESTORE_CAMERA
+    DISPLAY_RADAR TRUE
+    SHUT_CHAR_UP scplayer FALSE
+    SET_PLAYER_CONTROL player1 ON
+    HIDE_CHAR_WEAPON_FOR_SCRIPTED_CUTSCENE scplayer FALSE
+    dealer_convo_stage = 0
+    dealer_deal2player = 0
+    CALL @SetIsDealGoingOn 1 OFF
+END
+IF dealer_deal2player == 0
+THEN
+    CLEAR_HELP
+    CLEAR_SEQUENCE_TASK dealer_task_sequence
+END
+GOTO @DEALER_ConvoDef
+
+:DEALER_Convo8
+GET_CHAR_COORDINATES dealer_char dealer_posx dealer_posy dealer_posz
+GET_CHAR_COORDINATES scplayer dealer_buyerposx dealer_buyerposy dealer_buyerposz
+GET_DISTANCE_BETWEEN_COORDS_2D dealer_posx dealer_posy dealer_buyerposx dealer_buyerposy dealer_dealerdist
+TASK_LOOK_AT_CHAR dealer_char scplayer -1
+IF dealer_dealerdist > 2.0
+THEN
+    dealer_convo_stage += 1
+ELSE
+    GET_SCRIPT_TASK_STATUS dealer_buyer 0x639 dealer_tempint1
+    IF dealer_tempint1 == 7
+    THEN
+        GET_SCRIPT_TASK_STATUS dealer_buyer 0x605 dealer_tempint1
+        IF dealer_tempint1 == 7
+        THEN
+        	TASK_PLAY_ANIM scplayer "DRUGS_BUY" "DEALER" 4.0 0 0 0 0 -1
+        end
+        GET_SCRIPT_TASK_STATUS dealer_char 0x605 dealer_tempint1
+        IF dealer_tempint1 == 7
+        THEN
+        	TASK_PLAY_ANIM dealer_char "DEALER_DEAL" "DEALER" 4.0 0 0 0 0 -1
+        	dealer_convo_stage += 1
+        END
+    END
+END
+GOTO @DEALER_ConvoDef
+
+:DEALER_Convo9
+GET_CHAR_COORDINATES dealer_char dealer_posx dealer_posy dealer_posz
+GET_CHAR_COORDINATES scplayer dealer_buyerposx dealer_buyerposy dealer_buyerposz
+GET_DISTANCE_BETWEEN_COORDS_2D dealer_posx dealer_posy dealer_buyerposx dealer_buyerposy dealer_dealerdist
+TASK_LOOK_AT_CHAR dealer_char scplayer -1
+IF dealer_dealerdist > 2.0
+THEN
+    dealer_tempint1 = 7
+ELSE
+    GET_SCRIPT_TASK_STATUS dealer_char 0x605 dealer_tempint1
+END
+IF dealer_tempint1 == 7
+THEN
+    CALL @FinishTransaction 0
+    
+    SAY_AMBIENT_SPEECH dealer_char 197 dealer_tempint1
+    CLEAR_CONVERSATION_FOR_CHAR dealer_char
+    SET_CHAR_WANTED_BY_POLICE dealer_char TRUE
+    
+	GOSUB @DEALER_GetNumDrugs
+    IF dealer_tempint2 > 0
+    THEN
+        GOSUB @DEALER_StartConvo
+    ELSE
+        dealer_hasdrugs = 0
+    END
+    
+    RESTORE_CAMERA
+    DISPLAY_RADAR TRUE
+    SHUT_CHAR_UP scplayer FALSE
+    SET_PLAYER_CONTROL player1 ON
+    HIDE_CHAR_WEAPON_FOR_SCRIPTED_CUTSCENE scplayer FALSE
+    CALL @SetIsDealGoingOn 1 OFF
+	dealer_convo_stage = 0
+	dealer_stage = 0
+	dealer_timera = 0
+	dealer_timerb = 0
+END
+GOTO @DEALER_ConvoDef
+
+:DEALER_ConvoDef
+RETURN
+
+:DEALER_DecreaseZoneDealerCount
+GET_ZONE_NUMBER_OF_DRUG_DEALERS dealer_zonename dealer_tempint2
+IF dealer_tempint2 > 0
+THEN
+    dealer_tempint2 -= 1
+    SET_ZONE_NUMBER_OF_DRUG_DEALERS dealer_zonename dealer_tempint2
+END
+RETURN
+
+:DEALER_End
+{IF dealer_convo_response == 1
+THEN
+    GOSUB @DEALER_DecreaseZoneDealerCount
+END}
+IF NOT dealer_deal2player == 0
+THEN
+    IF dealer_deal2player == 3
+    THEN
+        CALL @FinishTransaction 0
+        RESTORE_CAMERA_JUMPCUT
+        SET_PLAYER_CONTROL player1 ON
+        SHUT_CHAR_UP scplayer FALSE
+        DISPLAY_RADAR TRUE
+        dealer_deal2player = 0
+    END
+    
+    RESTORE_CAMERA
+    DISPLAY_RADAR TRUE
+    SHUT_CHAR_UP scplayer FALSE
+    SET_PLAYER_CONTROL player1 ON
+    HIDE_CHAR_WEAPON_FOR_SCRIPTED_CUTSCENE scplayer FALSE
+    CALL @SetIsDealGoingOn 1 OFF
+	dealer_convo_stage = 0
+	dealer_stage = 0
+	dealer_timera = 0
+	dealer_timerb = 0
+END
+CLEAR_CONVERSATION_FOR_CHAR dealer_char
+IF dealer_buyer > -1
+THEN MARK_CHAR_AS_NO_LONGER_NEEDED dealer_buyer
+END
+REMOVE_DECISION_MAKER $9453
+TERMINATE_THIS_SCRIPT
+
+:DEALER_SetTutorialShown
+GOSUB @GetSaveVarIndex
+IF 0@ == 0
+THEN CLEAR_BIT_L gSaveBools SBOOLS_bDrugBuyTutDone
+ELSE SET_BIT_L gSaveBools SBOOLS_bDrugBuyTutDone
+END
+RET 0
+
+:DEALER_NeedToShowTutorial
+GOSUB @GetSaveVarIndex
+IF 0039:   gDebugModeOn == 1
+THEN
+    SET_BIT_L gSaveBools SBOOLS_bDrugBuyTutDone
+END
+NOT IS_BIT_SET_L gSaveBools SBOOLS_bDrugBuyTutDone
+RET 0

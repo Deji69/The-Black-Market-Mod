@@ -1,0 +1,568 @@
+// ********************************************************************************************
+// *** Random peds ask player for random quantities of drugs. The price will be generated   ***
+// *** automatically and the player can choose whether to go through with the deal. The     ***
+// *** ultimate goal for the player is to make a profit on every deal. Profit will be made  *** 
+// *** per-drug if it is sold for more than it was bought for. Ooh, so realistic.           ***
+// ********************************************************************************************
+
+CONST
+FIENDS_CHAR             = VAR_1
+FIENDS_FIND_STAGE       = VAR_2
+FIENDS_KEYISDOWN        = VAR_3
+FIENDS_DELAY            = VAR_4
+FIENDS_PRICE            = VAR_5
+FIENDS_DRUG             = VAR_6
+FIENDS_PEDTYPE          = VAR_7
+FIENDS_TALK_STAGE       = VAR_8
+FIENDS_DRUG_NAME        = VAR_9
+FIENDS_HELP_DISPLAYED   = VAR_10
+FIENDS_CAUGHT_BY_COPS   = VAR_11
+
+{// Car Type flags for determining avg character wealth
+NORMAL_CAR              = 0x1
+POOR_FAMILY_CAR         = 0x2
+RICH_FAMILY_CAR         = 0x4
+EXECUTIVE_CAR           = 0x8
+WORKER_CAR              = 0x10
+BIG_CAR                 = 0x20
+TAXI_CAR                = 0x40
+MOPED                   = 0x80
+MOTORBIKE               = 0x100
+LEISURE_BOAT            = 0x200
+WORKER_BOAT             = 0x400
+BICYCLE                 = 0x800}
+END
+
+$ONMISSION == 0
+ELSE_GOTO @FIENDS_Quit
+IS_PLAYER_PLAYING player1
+ELSE_GOTO @FIENDS_Quit
+IS_CHAR_ON_FOOT scplayer
+ELSE_GOTO @FIENDS_Quit
+GET_INTERIOR_FROM_CHAR scplayer TEMP_1
+TEMP_1 == 0
+ELSE_GOTO @FIENDS_Quit
+CALL @GetTotalDrugQuantity 0 TEMP_1
+TEMP_1 > 0
+ELSE_GOTO @FIENDS_Quit
+IF fiends_char == 0
+THEN
+    fiends_char = -1
+END
+GOSUB @FIENDS_Debug
+GOSUB @FIENDS_Approach
+GOTO @FIENDS_End
+
+:FIENDS_Debug
+STORE_DEBUG_COMMAND v$1221
+IF COMPARE_STRING_VS16 v$1221 "FIENDS"
+THEN
+    PRINTNL
+    PRINTINT2 "FIENDS_FIND_STAGE" fiends_find_stage
+    PRINTINT2 "FIENDS_DRUG" fiends_drug
+    PRINTINT2 "FIENDS_PEDTYPE" fiends_pedtype
+END
+RETURN
+
+:FIENDS_Approach
+SWITCH fiends_find_stage 2 0 @FIENDS_ApproachEnd 0 @FIENDS_Approach1 1 @FIENDS_Approach2 -1 @FIENDS_ApproachEnd -1 @FIENDS_ApproachEnd -1 @FIENDS_ApproachEnd -1 @FIENDS_ApproachEnd -1 @FIENDS_ApproachEnd
+
+:FIENDS_Approach1
+IF NOT fiends_char == -1
+THEN
+    IF DOES_CHAR_EXIST fiends_char
+    THEN MARK_CHAR_AS_NO_LONGER_NEEDED fiends_char
+    END
+    fiends_char = -1
+END
+IF IS_PLAYER_CONTROL_ON player1
+THEN
+    IF IS_CHAR_STOPPED scplayer
+    THEN
+        IF AND
+            0039:   gDealGoingOn == 0
+            NOT IS_HELP_MESSAGE_BEING_DISPLAYED
+        THEN
+            IF NOT IS_WANTED_LEVEL_GREATER player1 1
+            THEN
+                IF 001D:   timerb > fiends_delay
+                THEN
+                    GET_CHAR_COORDINATES scplayer TEMP_1 TEMP_2 TEMP_3
+                    FIND_NEAREST_CHAR_WITH_BUY_DRUGS_ATTRIBUTE TEMP_1 TEMP_2 TEMP_3 10.0 fiends_char
+                    IF fiends_char == -1
+                    THEN
+                        timerb = 0
+                        fiends_delay = 6000
+                    ELSE
+                        IF AND
+                            NOT IS_CHAR_MODEL fiends_char #BMYDRUG
+                            NOT IS_CHAR_MODEL fiends_char #HMYDRUG
+                            NOT IS_CHAR_MODEL fiends_char #WMYDRUG
+                            NOT IS_CHAR_MODEL fiends_char #BIKDRUG
+                        THEN
+                            IF NOT IS_GROUP_MEMBER dealer_buyer $PLAYER_GROUP
+                            THEN
+                                IF AND
+                                    NOT IS_CHAR_IN_ANY_CAR fiends_char
+                                    NOT IS_CHAR_RESPONDING_TO_EVENT fiends_char EVENT_ACQUAINTANCE_PED_HATE
+                                    NOT IS_CHAR_RESPONDING_TO_EVENT fiends_char EVENT_ACQUAINTANCE_PED_DISLIKE
+                                    NOT IS_CHAR_RESPONDING_TO_EVENT fiends_char EVENT_DAMAGE
+                                THEN
+                                    IF CALL @IsPedOnDrugs 1 fiends_char
+                                    THEN
+                                        MARK_CHAR_AS_NO_LONGER_NEEDED fiends_char
+                                        fiends_char = -1
+                                    ELSE
+                                        GET_PED_TYPE fiends_char fiends_pedtype
+                                        CALL @GetRandomDrugForPed 1 fiends_char fiends_drug
+                                        CALL @GetDrugQuantity 1 fiends_drug TEMP_1
+                                        IF TEMP_1 > 0
+                                        THEN
+                                            TASK_FOLLOW_FOOTSTEPS fiends_char scplayer
+                                            //TASK_GO_TO_CHAR fiends_char scplayer 12000 2.0
+                                            timera = 0
+                                            fiends_talk_stage = 0
+                                            fiends_find_stage += 1
+                                        ELSE
+                                            MARK_CHAR_AS_NO_LONGER_NEEDED fiends_char
+                                            fiends_char = -1
+                                        END
+                                    END
+                                ELSE
+                                    MARK_CHAR_AS_NO_LONGER_NEEDED fiends_char
+                                    fiends_char = -1
+                                END
+                            END
+                        ELSE
+                            fiends_char = -1
+                        END
+                    END
+                END
+            END
+        ELSE
+            timerb = 0
+            IF 8039:   NOT gDealGoingOn == 0
+            THEN fiends_delay = 15000
+            END
+        END
+    END
+ELSE
+    timerb = 0
+END
+GOTO @FIENDS_ApproachEnd
+
+:FIENDS_Approach2
+IF NOT IS_CHAR_DEAD fiends_char
+THEN
+    IF NOT IS_CHAR_RESPONDING_TO_EVENT fiends_char EVENT_DAMAGE
+    THEN
+        IF fiends_talk_stage > 0
+        THEN
+            GET_CHAR_COORDINATES scplayer TEMP_1 TEMP_2 TEMP_3
+            GET_CHAR_COORDINATES fiends_char TEMP_4 TEMP_5 TEMP_6
+            GET_DISTANCE_BETWEEN_COORDS_2D TEMP_1 TEMP_2 TEMP_4 TEMP_5 TEMP_3
+            IF TEMP_3 > 3.0
+            THEN
+                SET_PLAYER_CONTROL player1 ON
+                RESTORE_CAMERA_JUMPCUT
+                0006: gDealGoingOn = 0
+                GOTO @FIENDS_Leave
+            END
+        END
+        
+        GOSUB @FIENDS_Deal
+    ELSE
+        SET_PLAYER_CONTROL player1 ON
+        RESTORE_CAMERA_JUMPCUT
+        0006: gDealGoingOn = 0
+        GOTO @FIENDS_Leave
+    END
+ELSE
+    SET_PLAYER_CONTROL player1 ON
+    RESTORE_CAMERA_JUMPCUT
+    0006: gDealGoingOn = 0
+    GOTO @FIENDS_Leave
+END
+GOTO @FIENDS_ApproachEnd
+
+:FIENDS_ApproachEnd
+RETURN
+
+:FIENDS_Deal
+SWITCH fiends_talk_stage 7 0 @FIENDS_DealEnd 0 @FIENDS_Deal1 1 @FIENDS_Deal2 2 @FIENDS_Deal3 3 @FIENDS_Deal4 4 @FIENDS_Deal5 5 @FIENDS_Deal6 6 @FIENDS_Deal7
+
+:FIENDS_Deal1
+GET_SCRIPT_TASK_STATUS fiends_char 0x850 TEMP_1
+
+IF NOT TEMP_1 == 7
+THEN
+    IF AND
+        timera < 10000
+        0039:   gDealGoingOn == 0
+    THEN
+        GET_CHAR_COORDINATES scplayer TEMP_1 TEMP_2 TEMP_3
+        GET_CHAR_COORDINATES fiends_char TEMP_4 TEMP_5 TEMP_6
+        GET_DISTANCE_BETWEEN_COORDS_2D TEMP_1 TEMP_2 TEMP_4 TEMP_5 TEMP_3
+        IF TEMP_3 <= 2.0
+        THEN
+            timera = 0
+            fiends_talk_stage += 1
+        END
+    ELSE
+        GOTO @FIENDS_Leave
+    END
+ELSE
+    GOTO @FIENDS_Leave
+END
+GOTO @FIENDS_ApproachEnd
+
+:FIENDS_Deal2
+IF AND
+    IS_PLAYER_CONTROL_ON player1
+    0039:   gDealGoingOn == 0
+THEN
+    IF IS_CHAR_DEAD fiends_char
+    THEN
+        GOTO @FIENDS_Leave
+    END
+    GET_SCRIPT_TASK_STATUS fiends_char 0x850 TEMP_1
+    IF NOT TEMP_1 == 7
+    THEN
+        GET_CHAR_COORDINATES scplayer TEMP_1 TEMP_2 TEMP_3
+        GET_CHAR_COORDINATES fiends_char TEMP_4 TEMP_5 TEMP_6
+        GET_DISTANCE_BETWEEN_COORDS_2D TEMP_1 TEMP_2 TEMP_4 TEMP_5 TEMP_3
+        IF TEMP_3 > 2.0
+        THEN
+            IF timera > 6000
+            THEN
+                GOTO @FIENDS_Leave
+            END
+        ELSE
+            timera = 0
+            IF NOT IS_HELP_MESSAGE_BEING_DISPLAYED
+            THEN
+                CALL_FUNCTION 0x588BE0 4 4 0 1 0 "Press ~k~~CONVERSATION_YES~ to sell drugs.~N~Press ~k~~CONVERSATION_NO~ to reject."
+                fiends_help_displayed = 1
+            END
+            IF IS_BUTTON_PRESSED PAD1 DPADLEFT
+            THEN
+                fiends_delay = 60000
+                GOSUB @FIENDS_Leave
+            ELSE
+                IF IS_BUTTON_PRESSED PAD1 DPADRIGHT
+                THEN
+                    IF NOT fiends_help_displayed == 0
+                    THEN
+                        CLEAR_HELP
+                        fiends_help_displayed = 0
+                    END
+                    
+                    GET_CHAR_POINTER fiends_char TEMP_1
+                    CALL_FUNCTION_RETURN 0x5F7E80 1 1 TEMP_1 TEMP_2
+                    IF NOT TEMP_2 == 0
+                    THEN
+                        REMOVE_CHAR_FROM_GROUP fiends_char
+                        CLEAR_CHAR_TASKS_IMMEDIATELY fiends_char
+                        PRINTSTRING "CHAR_REMOVED_FROM_GROUP"
+                    END
+                    
+                    TASK_STAND_STILL fiends_char -2
+                    
+                    SET_PLAYER_CONTROL player1 OFF
+                    SET_EVERYONE_IGNORE_PLAYER player1 ON
+                    HIDE_CHAR_WEAPON_FOR_SCRIPTED_CUTSCENE scplayer FALSE
+                    TASK_TURN_CHAR_TO_FACE_CHAR scplayer fiends_char
+                    TASK_TURN_CHAR_TO_FACE_CHAR fiends_char scplayer
+                    ATTACH_CAM_TO_CHAR_POINT_AT_CHAR scplayer 0.5 -1.0 1.1 fiends_char 0.0 JUMP_CUT
+                    
+                    CALL @GetDrugName 1 fiends_drug fiends_drug_name
+                    CALL @GenerateDrugValues 0
+                    CALL @GetDrugValue 1 fiends_drug fiends_price
+                    
+                    fiends_talk_stage += 1
+                    fiends_keyisdown = DPADRIGHT
+                    0006: gDealGoingOn = 1
+                END
+            END
+        END
+    ELSE
+        GOTO @FIENDS_Leave
+    END
+ELSE
+    GOTO @FIENDS_Leave
+END
+GOTO @FIENDS_DealEnd
+
+:FIENDS_Deal3
+IF NOT IS_HELP_MESSAGE_BEING_DISPLAYED
+THEN
+    GET_LABEL_POINTER @TempMemory TEMP_1
+    IF IS_CHAR_MALE fiends_char
+    THEN STRING_FORMAT TEMP_1 "He wants %s for $%d.~N~~k~~CONVERSATION_YES~ Sell~N~~k~~CONVERSATION_NO~ Reject." fiends_drug_name fiends_price
+    ELSE STRING_FORMAT TEMP_1 "She wants %s for $%d.~N~~k~~CONVERSATION_YES~ Sell~N~~k~~CONVERSATION_NO~ Reject." fiends_drug_name fiends_price
+    END
+    fiends_help_displayed = 1
+    CALL_FUNCTION 0x588BE0 4 4 0 1 0 TEMP_1
+END
+
+GET_SCRIPT_TASK_STATUS fiends_char 0x639 TEMP_1
+IF TEMP_1 == 7
+THEN
+    GET_SCRIPT_TASK_STATUS fiends_char 0x5BA TEMP_1
+	IF TEMP_1 == 7
+	THEN
+        TASK_STAND_STILL fiends_char -1
+    END
+END
+
+IF IS_BUTTON_PRESSED PAD1 DPADRIGHT
+THEN
+    IF fiends_keyisdown == 0
+    THEN
+        GET_SCRIPT_TASK_STATUS fiends_char 0x605 TEMP_1
+    	IF TEMP_1 == 7
+    	THEN
+            CALL @GetDrugQuantity 1 fiends_drug TEMP_1
+            IF TEMP_1 > 0
+            THEN
+                IF NOT fiends_help_displayed == 0
+                THEN
+                    CLEAR_HELP
+                    fiends_help_displayed = 0
+                END
+                
+        		SAY_AMBIENT_SPEECH fiends_char 83 TEMP_1
+        		TASK_TURN_CHAR_TO_FACE_CHAR fiends_char scplayer
+        		TASK_TURN_CHAR_TO_FACE_CHAR scplayer fiends_char
+        		timerb = 0
+        		fiends_talk_stage += 1
+        		GOTO @FIENDS_ApproachEnd
+            ELSE
+                IF NOT fiends_help_displayed == 0
+                THEN
+                    CLEAR_HELP
+                    fiends_help_displayed = 0
+                END
+                PRINT_HELP_STRING "Your drug supply fails to meet this customers demand."
+                SET_PLAYER_CONTROL player1 ON
+                RESTORE_CAMERA
+                GOTO @FIENDS_Leave
+            END
+        END
+    END
+ELSE
+    IF fiends_keyisdown == DPADRIGHT
+    THEN
+        fiends_keyisdown = 0
+    END
+END
+IF IS_BUTTON_PRESSED PAD1 DPADLEFT
+THEN
+    IF fiends_keyisdown == 0
+    THEN
+        CLEAR_HELP
+        SET_PLAYER_CONTROL player1 ON
+        RESTORE_CAMERA
+        GOTO @FIENDS_Leave
+    END
+ELSE
+    IF fiends_keyisdown == DPADLEFT
+    THEN
+        fiends_keyisdown = 0
+    END
+END
+GOTO @FIENDS_DealEnd
+
+:FIENDS_Deal4
+GET_SCRIPT_TASK_STATUS fiends_char 0x639 TEMP_1
+
+IF AND
+    TEMP_1 == 4
+    timerb > 4000
+THEN
+    GET_CHAR_COORDINATES scplayer TEMP_1 TEMP_2 TEMP_3
+    GET_CHAR_COORDINATES fiends_char TEMP_4 TEMP_5 TEMP_6
+    GET_ANGLE_BETWEEN_2D_VECTORS TEMP_1 TEMP_4 AND TEMP_2 TEMP_3 STORE_TO TEMP_3
+    //TEMP_3 *= -1.0
+    SET_CHAR_HEADING fiends_char TEMP_3
+    TEMP_1 = 7
+    PRINTSTRING "GANG_MEMBER_STALLED_INFORMING_FRIENDS"
+END
+
+IF TEMP_1 == 7
+THEN
+    TASK_PLAY_ANIM fiends_char "SHOP_PAY" "DEALER" 4.0 0 0 0 0 -1
+    fiends_talk_stage += 1
+    timerb = 0
+END
+GOTO @FIENDS_DealEnd
+
+:FIENDS_Deal5
+GET_SCRIPT_TASK_STATUS fiends_char 0x605 TEMP_1
+IF AND
+    TEMP_1 == 4
+    timerb > 4000
+THEN
+    TEMP_1 = 7
+    PRINTSTRING "GANG_MEMBER_STALLED_INFORMING_FRIENDS"
+END
+IF TEMP_1 == 7
+THEN
+    TASK_CLEAR_LOOK_AT scplayer
+    TASK_STAND_STILL fiends_char -2
+    timerb = 0
+    fiends_talk_stage += 1
+END
+GOTO @FIENDS_DealEnd
+
+:FIENDS_Deal6
+GET_SCRIPT_TASK_STATUS scplayer 0x639 TEMP_1
+
+IF AND
+    TEMP_1 == 4
+    timerb > 4000
+THEN
+    TEMP_1 = 7
+    timerb = 0
+    PRINTSTRING "GANG_MEMBER_STALLED_INFORMING_FRIENDS"
+END
+
+IF TEMP_1 == 7
+THEN
+    GET_SCRIPT_TASK_STATUS scplayer 0x605 TEMP_1
+    
+    IF AND
+        TEMP_1 == 4
+        timerb > 4000
+    THEN
+        TEMP_1 = 7
+        PRINTSTRING "GANG_MEMBER_STALLED_INFORMING_FRIENDS"
+    END
+    
+    IF TEMP_1 == 7
+    THEN            
+        TASK_CLEAR_LOOK_AT scplayer
+        SAY_AMBIENT_SPEECH fiends_char 188 TEMP_1
+        TASK_PLAY_ANIM scplayer "DEALER_DEAL" "DEALER" 4.0 0 0 0 0 -1
+        TASK_PLAY_ANIM fiends_char "DRUGS_BUY" "DEALER" 4.0 0 0 0 0 -1
+        SET_CHAR_WANTED_BY_POLICE fiends_char 1
+        SET_CHAR_DRUGGED_UP fiends_char 1
+        fiends_talk_stage += 1
+        fiends_caught_by_cops = 0
+        timerb = 0
+    END
+END
+GOTO @FIENDS_DealEnd
+
+:FIENDS_Deal7
+IF fiends_caught_by_cops == 0
+THEN
+    GET_CHAR_COORDINATES scplayer TEMP_1 TEMP_2 TEMP_3
+    CALL_FUNCTION_RETURN 0x5625F0 4 4 18.0 TEMP_3 TEMP_2 TEMP_1 TEMP_4
+    IF TEMP_4 > 0
+    THEN
+        fiends_caught_by_cops = 1
+        PRINTINT2 "NEARBY_POLICE_ENTITIES" TEMP_4
+    END
+END
+
+GET_SCRIPT_TASK_STATUS scplayer 0x605 TEMP_1
+IF TEMP_1 == 7
+THEN
+    GET_SCRIPT_TASK_STATUS fiends_char 0x605 TEMP_1
+    
+    IF AND
+        TEMP_1 == 4
+        timerb > 4000
+    THEN
+        TEMP_1 = 7
+        PRINTSTRING "GANG_MEMBER_STALLED_INFORMING_FRIENDS"
+    END
+    
+    IF TEMP_1 == 7
+    THEN
+        RESTORE_CAMERA
+        SET_PLAYER_CONTROL player1 ON
+        ADD_SCORE player1 fiends_price
+        GET_PED_TYPE fiends_char TEMP_1
+        IF TEMP_1 == PEDTYPE_GROVE
+        THEN
+            CALL @IncNumHomiesDealt 0
+        END
+        005A: gSaveDrugCashEarned += fiends_price
+        005A: gSaveDrugProfit += fiends_price
+        //0062: gSaveDrugLoss -= fiends_price
+        SET_CHAR_MONEY fiends_char 0
+        CALL @Stats_OnDrugSold 1 fiends_drug
+        CALL @TakeDrugs 2 fiends_drug 1
+        0006: gDealGoingOn = 0
+        
+        IF NOT fiends_caught_by_cops == 0
+        THEN
+            ALTER_WANTED_LEVEL_NO_DROP player1 1
+            fiends_caught_by_cops = 0
+        END
+        GOTO @FIENDS_Leave
+    END
+END
+GOTO @FIENDS_DealEnd
+
+{
+    BUYDRUGS peds
+    #BMYDJ #BMYST #WMYST #SBMYST #SBMYRI #WMYVA
+    #WMYCLOT #SMYST #SMYST2 #BMYPIMP #WMYVA2
+    #BMYBU #WMYCON #HMYRI #WMYPLT #WMYCONB
+    #VWMYBJD #SOMYRI #SOMYBU #SBMORI #BMYMOUN
+    #WMYMOUN #WMYBE #WMYPIZZ #WMYBELL #BMOCHIL
+    #BMYBAR #WMYBAR #WMYBP #WBDYG1 #WBDYG2
+    #DWMYLC1 #WMYMECH #BMYPOL1 #BMYPOL2
+    #WMYSGRD #SWMYHP1 #VBMYELV #CWMYFR #BMYBOUN
+    #WMYBOUN #WMYAMMO #BMYTATT #CWMYHB2
+    #DWMYLC2 #BIKERA #BIKERB #WMYCH #HECK1
+    #HECK2 #BMYCON #BFYST #HFYST #VWFYST1
+    #WFYST #WFYSEX #WFYBURG #SOFYST #SWFYST
+    #VBFYST2 #VHFYST3 #BFYBU #WFYBU #VWFYCRP
+    #WFYSTEW #DWFYLC1 #CWFYHB #HMYST #OFYST
+    #OMYST #SBFYST #SWMYST #BFYPRO #HFYPRO
+    #SWFOPRO #VWFYPRO #WFYPRO #VHFYPRO
+    #SHFYPRO #SBFYPRO #SFYPRO #VBFYPRO #BMYCR
+    #HMYCR #WMYCR #MAFFA #MAFFB #MAFBOSS
+    #SBMYCR #BMYCG #WFYCRK #HMYCM #VWMYCR
+    #VBMYCR #VHMYCR #SHMYCR #SWMYCR #BIKDRUG
+    #WMYCD1 #WMYRI #WFYRO #BFYRI #BMYRI #HFYRI
+    #OFYRI #OMYRI #SWMYHP2 #VHMYELV #VIMYELV
+    #WFYRI #DNFYLC #WMYBU #SOFYRI #SWMYRI
+}
+:FIENDS_DealEnd
+RETURN
+
+:FIENDS_Leave
+IF NOT fiends_help_displayed == 0
+THEN
+    CLEAR_HELP
+    fiends_help_displayed = 0
+END
+MARK_CHAR_AS_NO_LONGER_NEEDED fiends_char
+SET_EVERYONE_IGNORE_PLAYER player1 OFF
+HIDE_CHAR_WEAPON_FOR_SCRIPTED_CUTSCENE scplayer FALSE
+0006: gDealGoingOn = 0
+fiends_char = -1
+fiends_find_stage = 0
+fiends_talk_stage = 0
+timerb = 0
+RETURN
+
+:FIENDS_GetCharInfo
+GET_CHAR_MODEL fiends_char TEMP_1
+CALL @GetModelInfo 1 TEMP_1 TEMP_2
+0A8E: TEMP_3 = TEMP_2 + 0x3A
+RETURN
+
+:FIENDS_Quit
+fiends_find_stage = 0
+IF fiends_char > -1
+THEN
+    MARK_CHAR_AS_NO_LONGER_NEEDED fiends_char
+END
+
+:FIENDS_End

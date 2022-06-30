@@ -1,0 +1,14 @@
+Possibly useful addresses for druggies:
+
+0x553F00 -> Render textures / Render lights (?) If disabled, player/actors are completely black
+
+0x5533B0 -> Something with light
+
+0x754B26 : jnz short LightingLoop (NOP this to produce rainbow effects) default 117.
+
+0x754AEF : jle short Retn (Write 0xEB to make this a jump for no lighting at all) 126
+
+
+Weathers
+
+342 - 430 - 482(white) - 490(blue) - 503 - 516 - 542 - 547 - 548 - 644 - 657 - 815 - 816 - 818 - 822
